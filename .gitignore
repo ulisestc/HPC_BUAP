@@ -365,3 +365,16 @@ TSWLatexianTemp*
 *.glstex
 
 # End of https://www.toptal.com/developers/gitignore/api/c,latex
+
+### Custom rules ###
+# VS Code Code Runner
+tempCodeRunnerFile
+tempCodeRunnerFile.*
+*.temp
+
+# Binaries & Executables
+act_2/act_2
+a.out
+
+#ZIPs
+*.zip

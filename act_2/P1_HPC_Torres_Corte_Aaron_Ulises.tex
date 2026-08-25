@@ -1,0 +1,194 @@
+\documentclass[runningheads]{llncs}
+% Nota: Si no cuentas con la clase llncs.cls en tu entorno local, 
+% puedes reemplazar las líneas anteriores por:
+% \documentclass[11pt,a4paper]{article}
+% \usepackage[utf8]{inputenc}
+% \usepackage[spanish]{babel}
+% \usepackage[margin=2.5cm]{geometry}
+
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+
+% Configuración para código C en listings
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.96,0.96,0.96}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{blue},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+\begin{document}
+
+\title{Práctica 1: Secuencial vs. Paralelo}
+\subtitle{Análisis Comparativo del Rendimiento en la Multiplicación de Matrices mediante hilos}
+
+\author{Torres Corte Aarón Ulises}
+\institute{Introducción al Cómputo de Alto Rendimiento \\
+Facultad de Ciencias de la Computación, BUAP}
+
+\maketitle
+
+\begin{abstract}
+En este reporte se presenta el estudio y la evolución realizada a partir del código base de referencia proporcionado en clase. Se analiza el paso de una transformación matricial por bloques de filas a la implementación del algoritmo de multiplicación de matrices $A_{N \times M} \times B_{M \times Z} = C_{N \times Z}$ con asignación de hilos a nivel de elemento $C_{i,j}$. Se evalúa el cumplimiento de la especificación didáctica de un hilo por casilla para matrices pequeñas y se realiza un análisis de escalabilidad para matrices de gran tamaño, registrando una aceleración empírica máxima de $9.59\times$ con 8 hilos en la máquina de prueba.
+
+\keywords{Hilos \and Multiplicación de Matrices \and HPC \and Granularidad \and Speedup \and Memory Bandwidth \and Ley de Amdahl.}
+\end{abstract}
+
+\section{Introducción y Fundamentos}
+El uso de hilos permite introducir los conceptos clave de la programación paralela en arquitectura de memoria compartida. En esta práctica se toma como punto de partida el programa base de referencia presentado en clase, el cual ilustra de forma clara la división de trabajo por bloques de filas, para extenderlo hacia la multiplicación de dos matrices y la evaluación experimental del rendimiento.
+
+\subsection{Evolución a partir del Código Base de Referencia}
+
+El programa desarrollado en esta práctica mantiene la estructura fundamental y las buenas prácticas introducidas en el código de referencia en C, adaptando la lógica matemática y la granularidad según los requerimientos solicitados:
+
+\begin{enumerate}
+    \item \textbf{Extensión de la Operación Matemática:}
+    \begin{itemize}
+        \item \textit{Código Base de Referencia:} Presenta la lógica de elevar al cuadrado los elementos de una matriz ($A_{i,j} \leftarrow A_{i,j}^2$) mediante la distribución equitativa del arreglo de filas entre los hilos.
+        \item \textit{Código Implementado (\texttt{act\_2.c}):} Extiende dicho modelo hacia la operación binaria de multiplicación entre dos matrices compatibles $A_{N \times M}$ y $B_{M \times Z}$, verificando la condición de dimensión ($M_1 = M_2$) y calculando cada celda como:
+        \begin{equation}
+            C_{i,j} = \sum_{k=0}^{M-1} A_{i,k} \cdot B_{k,j}
+        \end{equation}
+    \end{itemize}
+
+    \item \textbf{Granularidad y Asignación por Elemento $C_{i,j}$:}
+    \begin{itemize}
+        \item \textit{Código Base de Referencia:} Asigna a cada hilo un rango continuo de filas (\texttt{fila\_inicio} a \texttt{fila\_fin}), un esquema muy claro para entender la descomposición de dominio por filas.
+        \item \textit{Código Implementado (\texttt{act\_2.c}):} Implementa la asignación a nivel de elementos individuales de la matriz resultante $C_{i,j}$. Cada casilla lineal $idx \in [0, N \cdot Z - 1]$ se asigna a los hilos y se mapea mediante:
+        \begin{equation}
+            i = \lfloor idx / Z \rfloor, \quad j = idx \pmod Z
+        \end{equation}
+        Esto permite explorar la premisa didáctica de asignar un hilo por casilla ($p = N \times Z$), así como ajustar $p$ al número de núcleos físicos de la CPU.
+    \end{itemize}
+
+    \item \textbf{Incorporación de Algoritmo Secuencial y Métrica Temporal:}
+    \begin{itemize}
+        \item Para realizar la comparación requerida en la práctica, se agregó la función \texttt{multiplicar\_secuencial()} como línea de base (\textit{baseline}) y la medición de tiempo mediante \texttt{clock\_gettime(CLOCK\_MONOTONIC, ...)} para registrar de forma precisa los tiempos en segundos.
+    \end{itemize}
+\end{enumerate}
+
+\begin{table}[h!]
+\centering
+\caption{Cuadro comparativo entre el código base de referencia y el programa implementado.}
+\label{tab:comparativa}
+\begin{tabular}{lll}
+\toprule
+\textbf{Característica} & \textbf{Código Base de Referencia} & \textbf{Código Implementado (\texttt{act\_2.c})} \\
+\midrule
+\textbf{Operación} & Elementos al cuadrado ($A_{i,j}^2$) & Multiplicación $A_{N \times M} \times B_{M \times Z} = C_{N \times Z}$ \\
+\textbf{Modelo de División} & Bloques continuos de filas & Mapeo de casillas/elementos 1D ($C_{i,j}$) \\
+\textbf{Evaluación Secuencial} & N/A & Función \texttt{multiplicar\_secuencial} \\
+\textbf{Medición de Tiempo} & Demostrativo & Resolución con \texttt{clock\_gettime} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Implementación del Programa}
+
+A continuación se presenta el núcleo de la función ejecutada por cada hilo en el programa actual:
+
+\begin{lstlisting}[language=C, caption={Función de multiplicación por casilla en el código implementado.}]
+typedef struct {
+    int** matriz_uno;
+    int** matriz_dos;
+    int** matriz_resultante; 
+    int cols_resultante;
+    int casilla_inicio; 
+    int casilla_fin;
+    int dim_comp;
+} DatosHilo;
+
+void *multiplicar_elemento(void *arg) {
+    DatosHilo* datos = (DatosHilo*)arg;
+    for(int idx = datos->casilla_inicio; idx < datos->casilla_fin; idx++) {
+        int fila = idx / datos->cols_resultante;
+        int col = idx % datos->cols_resultante;
+        int suma = 0;
+        for (int k = 0; k < datos->dim_comp; k++) {
+            suma += datos->matriz_uno[fila][k] * datos->matriz_dos[k][col];
+        }
+        datos->matriz_resultante[fila][col] = suma;
+    }
+    return NULL;
+}
+\end{lstlisting}
+
+\section{Resultados Experimentales y Evaluación de Rendimiento}
+
+Se realizaron pruebas empíricas ejecutando el binario compilado (\texttt{-O2}) de forma nativa en el sistema local, evaluando el comportamiento bajo distintas dimensiones de matriz y configuraciones de hilos.
+
+\subsection{1. Enfoque Didáctico Estricto: Un Hilo por Elemento ($p = N \times Z$)}
+Siguiendo la indicación de la práctica de asignar un hilo por cada elemento $C_{i,j}$, en matrices de tamaño didáctico (como $3 \times 3$ o $5 \times 5$), el programa crea exitosamente $9$ o $25$ hilos, asignando exactamente una casilla a cada uno. 
+
+Sin embargo, al aplicar este enfoque en una matriz de $500 \times 500$ ($250,000$ hilos), la sobrecarga de llamadas al sistema y cambios de contexto degrada el tiempo a $6.028$ s frente a $0.517$ s secuencial ($S = 0.10\times$).
+
+\subsection{2. Enfoque de Escalamiento Ajustado a CPU ($p = 8$ Hilos)}
+Ajustando el número de hilos al total de núcleos de la CPU ($p = 8$), se registraron los tiempos reales de ejecución presentados en la Tabla~\ref{tab:resultados_empiricos}.
+
+\begin{table}[h!]
+\centering
+\caption{Resultados experimentales de tiempos de ejecución y aceleración (\textit{Speedup}) medidos de forma nativa en la máquina de prueba ($p = 8$ hilos).}
+\label{tab:resultados_empiricos}
+\begin{tabular}{cccccc}
+\toprule
+\textbf{Dimensiones ($N \times M \times Z$)} & \textbf{Hilos} & \textbf{$T_{\text{secuencial}}$ (s)} & \textbf{$T_{\text{paralelo}}$ (s)} & \textbf{Speedup ($S$)} & \textbf{Resultado} \\
+\midrule
+$5 \times 5 \times 5$ & 8 & 0.000001 & 0.000214 & $0.00\times$ & Secuencial más rápido \\
+$20 \times 20 \times 20$ & 8 & 0.000033 & 0.000211 & $0.16\times$ & Secuencial más rápido \\
+$100 \times 100 \times 100$ & 8 & 0.004185 & 0.000789 & $\mathbf{5.30\times}$ & \textbf{Inflexión Empírica ($S > 1$)} \\
+$300 \times 300 \times 300$ & 8 & 0.111311 & 0.016796 & $\mathbf{6.63\times}$ & \textbf{Aceleración Paralela} \\
+$500 \times 500 \times 500$ & 8 & 0.517333 & 0.069659 & $\mathbf{7.43\times}$ & \textbf{Aceleración Paralela} \\
+$800 \times 800 \times 800$ & 8 & 2.190288 & 0.240797 & $\mathbf{9.10\times}$ & \textbf{Aceleración Paralela} \\
+$1000 \times 1000 \times 1000$ & 8 & 4.430246 & 0.462081 & $\mathbf{9.59\times}$ & \textbf{Aceleración Máxima} \\
+$1200 \times 1200 \times 1200$ & 8 & 7.529368 & 0.847012 & $\mathbf{8.89\times}$ & \textbf{Saturación Ligera de Bus} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Análisis de Arquitectura de Computadoras y Cómputo de Alto Rendimiento}
+
+Al analizar los datos nativos medidos en la máquina local (Tabla~\ref{tab:resultados_empiricos}), destacan tres aspectos fundamentales del rendimiento:
+
+\subsection{1. Escalamiento Excepcional en Matrices Gigantes}
+En las pruebas nativas sobre $1000 \times 1000$, la versión secuencial requirió \textbf{4.430 segundos}, mientras que la versión paralela resolvió la multiplicación en tan solo \textbf{0.462 segundos}, alcanzando el pico de aceleración máxima de \textbf{9.59}$\times$. En $1200 \times 1200$, la ejecución secuencial tomó \textbf{7.529 segundos}, reduciéndose a \textbf{0.847 segundos} en paralelo ($S = 8.89\times$).
+
+\subsection{2. Inicio de la Saturación de Bus de Memoria en $1200 \times 1200$}
+Al comparar el *speedup* entre $1000 \times 1000$ ($9.59\times$) y $1200 \times 1200$ ($8.89\times$), se evidencia de forma empírica la primera inflexión descendente por saturación del bus de memoria RAM (\textit{Memory Bandwidth Bottleneck}). Al superar los $17.28$ MB de memoria activa requeridos por las tres matrices, la huella desborda la memoria caché L3, obligando a los 8 hilos a competir por la lectura/escritura en RAM.
+
+\subsection{3. Dependencia del Punto de Inflexión respecto al Hardware}
+Es fundamental señalar que los valores exactos de tiempo y el punto de inflexión donde $S > 1$ \textbf{no constituyen una constante universal}, sino un resultado empírico propio de la arquitectura física utilizada. Varían según:
+\begin{itemize}
+    \item El número de núcleos físicos y lógicos de la CPU.
+    \item La frecuencia de reloj y la capacidad de las memorias caché L1, L2 y L3.
+    \item La velocidad y ancho de banda de la memoria RAM principal.
+    \item Los flags de optimización utilizados en la compilación (\texttt{-O2}).
+\end{itemize}
+
+\section{Conclusión}
+Las mediciones nativas en la máquina de prueba confirman el poder del cómputo paralelo mediante hilos en arquitecturas multinúcleo. Para problemas pequeños ($5 \times 5$ y $20 \times 20$), el algoritmo secuencial domina al evitar la sobrecarga de administración del kernel. No obstante, para matrices gigantes de $1200 \times 1200$, la versión paralela redujo el tiempo de procesamiento de $7.52$ s a apenas $0.84$ s ($8.89\times$ más rápido), demostrando la eficiencia del modelo implementado para acelerar cargas de alta densidad computacional.
+
+\end{document}
