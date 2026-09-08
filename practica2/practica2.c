@@ -6,7 +6,7 @@
     - Utilizar semáforos (sem_t) para coordinar espacios disponibles y elementos listos, y un mutex (pthread_mutex_t) para proteger el acceso a la cola.
     - El programa debe correr infinitamente hasta que el usuario lo interrumpa (Ctrl+C).    
 */
-
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -46,6 +46,7 @@ void* producer(void* arg)
         pthread_mutex_unlock(&mutex); // desbloquea cola
 
         sem_post(&sem_full); // hay +1 lugares llenos
+        // sleep(.1);
     }
     return NULL;
 }
@@ -72,6 +73,7 @@ void* consumer(void* arg)
         pthread_mutex_unlock(&mutex); // desbloquear mutex
 
         sem_post(&sem_empty); // +1 lugares libres!
+        // sleep(.1);
     }
     return NULL;
 }
@@ -91,6 +93,7 @@ int main()
     pthread_create(&hilos[1], NULL, consumer, &id1);
     pthread_create(&hilos[2], NULL, consumer, &id2);
 
+    
     // Esperar a que todos los hilos terminen
     for (int i = 0; i < 3; i++) {
         pthread_join(hilos[i], NULL);
